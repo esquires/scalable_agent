@@ -20,6 +20,7 @@ from __future__ import print_function
 
 import collections
 import os.path
+import gym
 
 import numpy as np
 import tensorflow as tf
@@ -61,6 +62,46 @@ DEFAULT_ACTION_SET = (
     (20, 0, 0, 1, 0, 0, 0),   # Look Right + Forward
     (0, 0, 0, 0, 1, 0, 0),    # Fire.
 )
+
+class PyProcessCartPole(object):
+
+    def __init__(self):
+      self._env = gym.make('CartPole-v0')
+
+    def initial(self):
+      initial_obs = self._env.reset()
+      return initial_obs
+    
+    def render(self):
+      return self._env.render()
+
+    def step(self, action):
+      obs, reward, is_done, _ = self._env.step(action)
+      self._env.render()
+      done = np.array(is_done)
+      reward = np.float32(reward)
+      
+      if done:
+        self._env.reset() 
+
+      return reward, is_done, obs
+
+    @staticmethod
+    def _tensor_specs(method_name, unused_kwargs, constructor_kwargs):
+      """Returns a nest of `TensorSpec` with the method's output specification."""
+      observation_spec = tf.contrib.framework.TensorSpec([4], tf.double)
+
+      if method_name == 'initial':
+        # print("(environments.py) obs_specs are: ", observation_spec)
+        return observation_spec
+      elif method_name == 'step':
+        return (
+            tf.contrib.framework.TensorSpec([], tf.float32),
+            tf.contrib.framework.TensorSpec([], tf.bool),
+            observation_spec,
+        )
+      elif method_name == 'render':
+        return observation_spec
 
 
 class PyProcessDmLab(object):

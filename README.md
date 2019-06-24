@@ -78,6 +78,13 @@ python experiment.py --mode=test --level_name=dmlab30 --dataset_path=[...] \
     --test_num_episodes=10
 ```
 
+### Notes
+
+```sh
+# https://github.com/tensorflow/tensorflow/issues/24496
+export TF_FORCE_GPU_ALLOW_GROWTH=true
+```
+
 [arxiv]: https://arxiv.org/abs/1802.01561
 [deepmind_lab]: https://github.com/deepmind/lab
 [sonnet]: https://github.com/deepmind/sonnet

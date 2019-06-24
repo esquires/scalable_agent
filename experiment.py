@@ -89,6 +89,7 @@ flags.DEFINE_float('decay', .99, 'RMSProp optimizer decay.')
 flags.DEFINE_float('momentum', 0., 'RMSProp momentum.')
 flags.DEFINE_float('epsilon', .1, 'RMSProp epsilon.')
 
+flags.DEFINE_bool('use_cartpole', False, '')
 
 # Structure to be sent from actors to learner.
 ActorOutput = collections.namedtuple(
@@ -142,48 +143,65 @@ class Agent(snt.RNNCore):
 
   def _torso(self, input_):
     last_action, env_output = input_
-    reward, _, _, (frame, instruction) = env_output
+
+    if FLAGS.use_cartpole:
+        reward, _, _, frame = env_output
+    else:
+        reward, _, _, (frame, instruction) = env_output
 
     # Convert to floats.
     frame = tf.to_float(frame)
 
-    frame /= 255
-    with tf.variable_scope('convnet'):
-      conv_out = frame
-      for i, (num_ch, num_blocks) in enumerate([(16, 2), (32, 2), (32, 2)]):
-        # Downscale.
-        conv_out = snt.Conv2D(num_ch, 3, stride=1, padding='SAME')(conv_out)
-        conv_out = tf.nn.pool(
-            conv_out,
-            window_shape=[3, 3],
-            pooling_type='MAX',
-            padding='SAME',
-            strides=[2, 2])
+    if not FLAGS.use_cartpole:
 
-        # Residual block(s).
-        for j in range(num_blocks):
-          with tf.variable_scope('residual_%d_%d' % (i, j)):
-            block_input = conv_out
-            conv_out = tf.nn.relu(conv_out)
+        frame /= 255
+        with tf.variable_scope('convnet'):
+          conv_out = frame
+          for i, (num_ch, num_blocks) in enumerate([(16, 2), (32, 2), (32, 2)]):
+            # Downscale.
             conv_out = snt.Conv2D(num_ch, 3, stride=1, padding='SAME')(conv_out)
-            conv_out = tf.nn.relu(conv_out)
-            conv_out = snt.Conv2D(num_ch, 3, stride=1, padding='SAME')(conv_out)
-            conv_out += block_input
+            conv_out = tf.nn.pool(
+                conv_out,
+                window_shape=[3, 3],
+                pooling_type='MAX',
+                padding='SAME',
+                strides=[2, 2])
 
-    conv_out = tf.nn.relu(conv_out)
-    conv_out = snt.BatchFlatten()(conv_out)
+            # Residual block(s).
+            for j in range(num_blocks):
+              with tf.variable_scope('residual_%d_%d' % (i, j)):
+                block_input = conv_out
+                conv_out = tf.nn.relu(conv_out)
+                conv_out = snt.Conv2D(num_ch, 3, stride=1, padding='SAME')(conv_out)
+                conv_out = tf.nn.relu(conv_out)
+                conv_out = snt.Conv2D(num_ch, 3, stride=1, padding='SAME')(conv_out)
+                conv_out += block_input
+
+        conv_out = tf.nn.relu(conv_out)
+        conv_out = snt.BatchFlatten()(conv_out)
+
+    else:
+        conv_out = frame
 
     conv_out = snt.Linear(256)(conv_out)
     conv_out = tf.nn.relu(conv_out)
 
-    instruction_out = self._instruction(instruction)
+    if not FLAGS.use_cartpole:
+        instruction_out = self._instruction(instruction)
 
     # Append clipped last reward and one hot last action.
     clipped_reward = tf.expand_dims(tf.clip_by_value(reward, -1, 1), -1)
     one_hot_last_action = tf.one_hot(last_action, self._num_actions)
-    return tf.concat(
-        [conv_out, clipped_reward, one_hot_last_action, instruction_out],
-        axis=1)
+
+    if FLAGS.use_cartpole:
+        return tf.concat(
+            [conv_out, clipped_reward, one_hot_last_action],
+            axis=1)
+    else:
+        return tf.concat(
+            [conv_out, clipped_reward, one_hot_last_action, instruction_out],
+            axis=1)
+
 
   def _head(self, core_output):
     policy_logits = snt.Linear(self._num_actions, name='policy_logits')(
@@ -415,7 +433,7 @@ def build_learner(agent, agent_state, env_outputs, agent_outputs):
   return done, infos, num_env_frames_and_train
 
 
-def create_environment(level_name, seed, is_test=False):
+def create_environment_dmlab(level_name, seed, is_test=False):
   """Creates an environment wrapped in a `FlowEnvironment`."""
   if level_name in dmlab30.ALL_LEVELS:
     level_name = 'contributed/dmlab30/' + level_name
@@ -438,6 +456,15 @@ def create_environment(level_name, seed, is_test=False):
                            FLAGS.num_action_repeats, seed)
   return environments.FlowEnvironment(p.proxy)
 
+
+def create_environment_gym(*args, **kwargs):
+  p = py_process.PyProcess(environments.PyProcessCartPole)
+  return environments.FlowEnvironment(p.proxy)
+
+if FLAGS.use_cartpole:
+  create_environment = create_environment_gym
+else:
+  create_environment = create_environment_dmlab
 
 @contextlib.contextmanager
 def pin_global_variables(device):
@@ -477,8 +504,8 @@ def train(action_set, level_names):
     # actors. Continual copying the variables from the GPU is slow.
     global_variable_device = shared_job_device + '/cpu'
     cluster = tf.train.ClusterSpec({
-        'actor': ['localhost:%d' % (8001 + i) for i in range(FLAGS.num_actors)],
-        'learner': ['localhost:8000']
+        'actor': ['localhost:%d' % (9001 + i) for i in range(FLAGS.num_actors)],
+        'learner': ['localhost:9000']
     })
     server = tf.train.Server(cluster, job_name=FLAGS.job_name,
                              task_index=FLAGS.task)
