@@ -53,7 +53,7 @@ import multiprocessing
 import tensorflow as tf
 
 from tensorflow.python.util import function_utils
-
+import traceback
 
 nest = tf.contrib.framework.nest
 
@@ -84,6 +84,9 @@ class _TFProxy(object):
           self._out.send(args)
           result = self._out.recv()
           if isinstance(result, Exception):
+            print('args ', args)
+            traceback.print_stack()
+            print('just printed traceback')
             raise result
           if result is not None:
             return result

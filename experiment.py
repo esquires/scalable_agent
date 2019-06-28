@@ -45,7 +45,6 @@ nest = tf.contrib.framework.nest
 flags = tf.app.flags
 FLAGS = tf.app.flags.FLAGS
 
-flags.DEFINE_string('logdir', '/tmp/agent', 'TensorFlow log directory.')
 flags.DEFINE_enum('mode', 'train', ['train', 'test'], 'Training or test mode.')
 
 # Flags used for testing.
@@ -89,7 +88,11 @@ flags.DEFINE_float('decay', .99, 'RMSProp optimizer decay.')
 flags.DEFINE_float('momentum', 0., 'RMSProp momentum.')
 flags.DEFINE_float('epsilon', .1, 'RMSProp epsilon.')
 
-flags.DEFINE_bool('use_cartpole', False, '')
+flags.DEFINE_bool('use_cartpole', True, '')
+flags.DEFINE_string(
+    'logdir',
+    os.path.join('/tmp/agent', 'cartpole' if FLAGS.use_cartpole else 'lab'),
+    'TensorFlow log directory.')
 
 # Structure to be sent from actors to learner.
 ActorOutput = collections.namedtuple(
@@ -270,6 +273,7 @@ def build_actor(agent, env, level_name, action_set):
 
   def step(input_, unused_i):
     """Steps through the agent and the environment."""
+    print('running step in build_actor')
     env_state, env_output, agent_state, agent_output = input_
 
     # Run agent.
